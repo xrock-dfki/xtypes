@@ -265,17 +265,24 @@ namespace xtypes
             options.callbacks.payload = this;
             GIT_CHECK_ERROR(git_remote_fetch(remote, nullptr, &options, "pull"));
 
-            git_oid branchOidToMerge;
-            GIT_CHECK_ERROR(git_repository_fetchhead_foreach(
-                m_repository, [](const char *name, const char *url, const git_oid *oid, unsigned int is_merge, void *payload) -> int
-                {
-                                //if (is_merge)
-                                   GIT_CHECK_ERROR(git_oid_cpy((git_oid *)payload, oid));
-                                return 0; },
-                &branchOidToMerge));
+            const std::string remote_branch_ref("refs/remotes/" + remote_name + "/" + branch_name);
+            git_reference *remote_ref = nullptr;
 
+            // Check if remote branch exists
+            int error = git_reference_lookup(&remote_ref, m_repository, remote_branch_ref.c_str());
+            if (error == GIT_ENOTFOUND) {
+                std::cerr << "Remote branch not found: " << remote_branch_ref << "\n";
+                git_remote_free(remote);
+                return;
+            }
+            GIT_CHECK_ERROR(error);
+
+            // Get the target OID from the remote ref
+            const git_oid *branchOidToMerge = git_reference_target(remote_ref);
+
+            // Create annotated commit for merge analysis
             git_annotated_commit *their_heads[1];
-            GIT_CHECK_ERROR(git_annotated_commit_lookup(&their_heads[0], m_repository, &branchOidToMerge));
+            GIT_CHECK_ERROR(git_annotated_commit_lookup(&their_heads[0], m_repository, branchOidToMerge));
 
             git_merge_analysis_t merge_analysis;
             git_merge_preference_t merge_prefs;
@@ -284,23 +291,28 @@ namespace xtypes
             if (merge_analysis & GIT_MERGE_ANALYSIS_UP_TO_DATE)
             {
                 std::cout << "Repository::pull(): Already up to date.\n";
-                git_annotated_commit_free(their_heads[0]);
-                git_repository_state_cleanup(m_repository);
-                git_remote_free(remote);
-                return; // Repo is up to date, no merge is needed
             }
             else if (merge_analysis & GIT_MERGE_ANALYSIS_FASTFORWARD)
             {
-                std::cout << "Repository::pull(): Fast-forwarding.\n";
-                git_reference *reference;
-                git_reference *new_reference;
+                std::cout << "Repository::pull(): Fast-forwarding " << branch_name << ".\n";
 
-                const std::string name = ("refs/heads/" + branch_name);
-                if (git_reference_lookup(&reference, m_repository, name.c_str()) == 0)
-                    GIT_CHECK_ERROR(git_reference_set_target(&new_reference, reference, &branchOidToMerge, "Pull: Fast-forward"));
+                git_reference *local_ref = nullptr;
+                git_reference *new_local_ref = nullptr;
+                std::string local_branch_ref = "refs/heads/" + branch_name;
 
+                // Move local branch to new OID
+                if (git_reference_lookup(&local_ref, m_repository, local_branch_ref.c_str()) == 0) {
+                    GIT_CHECK_ERROR(git_reference_set_target(&new_local_ref, local_ref, branchOidToMerge, "Pull: Fast-forward"));
+                    git_reference_free(new_local_ref);
+                    git_reference_free(local_ref);
+                }
+
+                // reset local branch
                 GIT_CHECK_ERROR(git_reset_from_annotated(m_repository, their_heads[0], GIT_RESET_HARD, nullptr));
-                git_reference_free(reference);
+            }
+            else if (merge_analysis & GIT_MERGE_ANALYSIS_NORMAL)
+            {
+                std::cerr << "Repository::pull(): Merge required! Aborting!\n";
             }
             git_annotated_commit_free(their_heads[0]);
             git_repository_state_cleanup(m_repository);

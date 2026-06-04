@@ -156,7 +156,10 @@ nl::json xtypes::GitReference::checkout_repository(const std::string& local_dir,
             fs::create_directories(repo_dir);
             // Clone & open repository into the directory
             m_repo.reset();
-            m_repo = Repository::clone(remote_url, repo_dir);
+            if (revision_type == "branch")
+              m_repo = Repository::clone(remote_url, repo_dir, get_revision_name().c_str());
+            else
+              m_repo = Repository::clone(remote_url, repo_dir);
         }
         catch (const std::exception &ex)
         {
