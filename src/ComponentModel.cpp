@@ -744,55 +744,71 @@ std::string xtypes::ComponentModel::export_to_basic_model()
     data["name"] = get_name();
     data["domain"] = get_domain();
     data["uri"] = uri();
-    data["types"] = nl::json::array();
-    for (const auto& supermodel : get_types())
+    if (this->has_facts("model"))
     {
-        data["types"].push_back({{"name", supermodel->get_property("name")}, {"version", supermodel->get_property("version")}});
-    }
-    if (get_abstract())
-    {
-        data["implementations"] = nl::json::array();
-        this->set_unknown_fact_empty("implementations");
-        for (const auto &model : get_implementations())
+        data["types"] = nl::json::array();
+        for (const auto& supermodel : get_types())
         {
-            data["implementations"].push_back({{"name", model->get_property("name")}, {"domain", model->get_property("domain")}, {"version", model->get_property("version")}});
+            data["types"].push_back({{"name", supermodel->get_property("name")}, {"version", supermodel->get_property("version")}});
         }
     }
 
-    this->set_unknown_fact_empty("abstracts");
-    for (const auto &supermodel : get_abstracts())
+    if (this->has_facts("implementations"))
     {
-        data["abstracts"].push_back({{"name", supermodel->get_property("name")}, {"domain", supermodel->get_property("domain")}, {"version", supermodel->get_property("version")}});
-    }
-
-    //data["interfaces_of_abstracts"] = nl::json::array();
-    for (const auto &[ti, _] : this->get_facts("interfaces"))
-    {
-        const InterfacePtr this_interface(std::static_pointer_cast<Interface>(ti.lock()));
-        this_interface->set_unknown_fact_empty("interfaces_of_abstracts");
-        for (const auto &[ai, _] : this_interface->get_facts("interfaces_of_abstracts"))
+        if (get_abstract())
         {
-            const InterfacePtr abstract_interface(std::static_pointer_cast<Interface>(ai.lock()));
-            const ComponentModelPtr abstract(std::static_pointer_cast<ComponentModel>(abstract_interface->get_facts("parent").at(0).target.lock()));
-            nl::json ioa;
-            ioa["abstract_model_name"] = abstract->get_name(); 
-            ioa["abstract_interface_direction"] = abstract_interface->get_direction();
-            ioa["abstract_interface_name"] = abstract_interface->get_name(); 
-            ioa["abstract_interface_type"] = abstract_interface->get_type()->get_property("name");
-            data["interfaces_of_abstracts"].push_back(ioa);
+            data["implementations"] = nl::json::array();
+            for (const auto &model : get_implementations())
+            {
+                data["implementations"].push_back({{"name", model->get_property("name")}, {"domain", model->get_property("domain")}, {"version", model->get_property("version")}});
+            }
         }
-    
     }
-    if(this->has_facts("configured_for"))
-    {
-    for (const auto &[h, _] : this->get_facts("configured_for"))
-    {
-        const xtypes::ComponentModelPtr hardware_model(std::static_pointer_cast<ComponentModel>(h.lock()));
 
-        data["configured_for"]
-            .push_back({{"name", hardware_model->get_property("name")},{"version", hardware_model->get_property("version")}, {"uri", hardware_model->uri()}});
+    if (this->has_facts("abstracts"))
+    {
+        data["abstracts"] = nl::json::array();
+        for (const auto &supermodel : get_abstracts())
+        {
+            data["abstracts"].push_back({{"name", supermodel->get_property("name")}, {"domain", supermodel->get_property("domain")}, {"version", supermodel->get_property("version")}});
+        }
     }
+
+    if (this->has_facts("interfaces"))
+    {
+        data["interfaces_of_abstracts"] = nl::json::array();
+        for (const auto &[ti, _] : this->get_facts("interfaces"))
+        {
+            const InterfacePtr this_interface(std::static_pointer_cast<Interface>(ti.lock()));
+            if (!this_interface->has_facts("interfaces_of_abstracts"))
+                continue;
+            for (const auto &[ai, _] : this_interface->get_facts("interfaces_of_abstracts"))
+            {
+                const InterfacePtr abstract_interface(std::static_pointer_cast<Interface>(ai.lock()));
+                const ComponentModelPtr abstract(std::static_pointer_cast<ComponentModel>(abstract_interface->get_facts("parent").at(0).target.lock()));
+                nl::json ioa;
+                ioa["abstract_model_name"] = abstract->get_name(); 
+                ioa["abstract_interface_direction"] = abstract_interface->get_direction();
+                ioa["abstract_interface_name"] = abstract_interface->get_name(); 
+                ioa["abstract_interface_type"] = abstract_interface->get_type()->get_property("name");
+                data["interfaces_of_abstracts"].push_back(ioa);
+            }
+        
+        }
     }
+
+    if (this->has_facts("configured_for"))
+    {
+        data["configured_for"] = nl::json::array();
+        for (const auto &[h, _] : this->get_facts("configured_for"))
+        {
+            const xtypes::ComponentModelPtr hardware_model(std::static_pointer_cast<ComponentModel>(h.lock()));
+
+            data["configured_for"]
+                .push_back({{"name", hardware_model->get_property("name")},{"version", hardware_model->get_property("version")}, {"uri", hardware_model->uri()}});
+        }
+    }
+
     nl::json version;
     version["name"] = get_version();
     version["date"] = get_date();
@@ -821,103 +837,116 @@ std::string xtypes::ComponentModel::export_to_basic_model()
         version["data"] = self_data;
     }
 
-    for (const auto &[p, _] : this->get_facts("parts"))
+    if (this->has_facts("parts"))
     {
-        const xtypes::ComponentPtr part(std::static_pointer_cast<Component>(p.lock()));
-        nl::json partData;
-        partData["name"] = part->get_name();
-        partData["alias"] = part->get_alias();
-        partData["model"] = nl::json();
-        const xtypes::ComponentModelPtr target(part->get_type());
-        partData["model"]["name"] = target->get_name();
-        partData["model"]["domain"] = target->get_domain();
-        partData["model"]["version"] = target->get_version(); // NOTE: added \" to satisfy assertion(type == type) in xtype when importing
-        if (part->has_property("configuration") && !part->get_property("configuration").empty())
+        version["components"]["nodes"] = nl::json::array();
+        version["components"]["edges"] = nl::json::array();
+        for (const auto &[p, _] : this->get_facts("parts"))
         {
-            nl::json config;
-            if (part->get_property("configuration").is_string() && !part->get_property("configuration").get<std::string>().empty())
-                config = xtypes::parseJson(part->get_property("configuration").get<std::string>(), "xtypes::ComponentModel::exportToBasicModelJSON()->configuration");
-            else
-                config = part->get_property("configuration");
-            if (config.contains("name"))
+            const xtypes::ComponentPtr part(std::static_pointer_cast<Component>(p.lock()));
+            nl::json partData;
+            partData["name"] = part->get_name();
+            partData["alias"] = part->get_alias();
+            partData["model"] = nl::json();
+            const xtypes::ComponentModelPtr target(part->get_type());
+            partData["model"]["name"] = target->get_name();
+            partData["model"]["domain"] = target->get_domain();
+            partData["model"]["version"] = target->get_version(); // NOTE: added \" to satisfy assertion(type == type) in xtype when importing
+            if (part->has_property("configuration") && !part->get_property("configuration").empty())
             {
-                config["name"] = part->get_name();
-                version["components"]["configuration"]["nodes"].push_back(config);
-            }
-        }
-        partData["interface_aliases"] = nl::json();
-        for (auto &[i, _] : part->get_facts("interfaces"))
-        {
-            InterfacePtr interface = std::static_pointer_cast<Interface>(i.lock());
-            nl::json edgeData;
-            // Store the part interface alias
-            partData["interface_aliases"][interface->get_name()] = interface->get_alias();
-            edgeData["from"]["name"] = part->get_name();
-            edgeData["from"]["interface"] = interface->get_name();
-            edgeData["from"]["domain"] = interface->get_domain();
-            for (auto &[otherInterface, otherInterfaceProps] : interface->get_facts("others"))
-            {
-                const std::vector<xtypes::Fact> &parent_component = otherInterface.lock()->get_facts("parent");
-                const xtypes::ComponentPtr otherPart = std::static_pointer_cast<Component>(parent_component[0].target.lock());
-                edgeData["to"]["name"] = otherPart->get_name();
-                edgeData["to"]["interface"] = std::static_pointer_cast<Interface>(otherInterface.lock())->get_name();
-                edgeData["to"]["domain"] = std::static_pointer_cast<Interface>(otherInterface.lock())->get_domain();
-
-                // Handle edge properties
-                const std::vector<std::string> excludes = {"configuration"};
-                for (auto &[prop, val] : otherInterfaceProps.items())
+                nl::json config;
+                if (part->get_property("configuration").is_string() && !part->get_property("configuration").get<std::string>().empty())
+                    config = xtypes::parseJson(part->get_property("configuration").get<std::string>(), "xtypes::ComponentModel::exportToBasicModelJSON()->configuration");
+                else
+                    config = part->get_property("configuration");
+                if (config.contains("name"))
                 {
-                    std::vector<std::string>::const_iterator it = std::find_if(excludes.begin(), excludes.end(), [&prop = prop](const std::string &excluded)
-                                                                               { return excluded == prop; });
-                    if (it != excludes.end())
-                        continue;
-                    edgeData[prop] = val;
+                    config["name"] = part->get_name();
+                    version["components"]["configuration"]["nodes"].push_back(config);
                 }
-
-                // Handle edge configuration
-                if (otherInterfaceProps.contains("configuration") && !otherInterfaceProps["configuration"].empty())
+            }
+            partData["interface_aliases"] = nl::json();
+            for (auto &[i, _] : part->get_facts("interfaces"))
+            {
+                InterfacePtr interface = std::static_pointer_cast<Interface>(i.lock());
+                nl::json edgeData;
+                // Store the part interface alias
+                partData["interface_aliases"][interface->get_name()] = interface->get_alias();
+                edgeData["from"]["name"] = part->get_name();
+                edgeData["from"]["interface"] = interface->get_name();
+                edgeData["from"]["domain"] = interface->get_domain();
+                for (auto &[otherInterface, otherInterfaceProps] : interface->get_facts("others"))
                 {
-                    nl::json config;
-                    if (otherInterfaceProps["configuration"].is_string() && !otherInterfaceProps["configuration"].get<std::string>().empty())
-                        config = xtypes::parseJson(otherInterfaceProps["configuration"].get<std::string>(), "xtypes::ComponentModel::exportToBasicModelJSON()->configuration2");
-                    else
-                        config = otherInterfaceProps["configuration"];
-                    if (otherInterfaceProps.contains("name"))
+                    const std::vector<xtypes::Fact> &parent_component = otherInterface.lock()->get_facts("parent");
+                    const xtypes::ComponentPtr otherPart = std::static_pointer_cast<Component>(parent_component[0].target.lock());
+                    edgeData["to"]["name"] = otherPart->get_name();
+                    edgeData["to"]["interface"] = std::static_pointer_cast<Interface>(otherInterface.lock())->get_name();
+                    edgeData["to"]["domain"] = std::static_pointer_cast<Interface>(otherInterface.lock())->get_domain();
+
+                    // Handle edge properties
+                    const std::vector<std::string> excludes = {"configuration"};
+                    for (auto &[prop, val] : otherInterfaceProps.items())
                     {
-                        config["name"] = otherInterfaceProps["name"];
+                        std::vector<std::string>::const_iterator it = std::find_if(excludes.begin(), excludes.end(), [&prop = prop](const std::string &excluded)
+                                                                                   { return excluded == prop; });
+                        if (it != excludes.end())
+                            continue;
+                        edgeData[prop] = val;
                     }
-                    version["components"]["configuration"]["edges"].push_back(config);
+
+                    // Handle edge configuration
+                    if (otherInterfaceProps.contains("configuration") && !otherInterfaceProps["configuration"].empty())
+                    {
+                        nl::json config;
+                        if (otherInterfaceProps["configuration"].is_string() && !otherInterfaceProps["configuration"].get<std::string>().empty())
+                            config = xtypes::parseJson(otherInterfaceProps["configuration"].get<std::string>(), "xtypes::ComponentModel::exportToBasicModelJSON()->configuration2");
+                        else
+                            config = otherInterfaceProps["configuration"];
+                        if (otherInterfaceProps.contains("name"))
+                        {
+                            config["name"] = otherInterfaceProps["name"];
+                        }
+                        version["components"]["configuration"]["edges"].push_back(config);
+                    }
+                    version["components"]["edges"].push_back(edgeData);
                 }
-                version["components"]["edges"].push_back(edgeData);
             }
+            version["components"]["nodes"].push_back(partData);
         }
-        version["components"]["nodes"].push_back(partData);
     }
 
-    for (const auto &[i, _] : this->get_facts("interfaces"))
+    if (this->has_facts("interfaces"))
     {
-        const InterfacePtr interface(std::static_pointer_cast<Interface>(i.lock()));
-        nl::json props = interface->get_properties();
-        // Special case: domain and type
-        props["domain"] = interface->get_domain();
-        props["type"] = interface->get_type()->get_property("name");
-        if (interface->has_relation("original") && (interface->get_facts("original").size() > 0))
+        version["interfaces"] = nl::json::array();
+        for (const auto &[i, _] : this->get_facts("interfaces"))
         {
-            props["linkToNode"] = std::static_pointer_cast<ComponentModel>(interface->get_facts("original")[0].target.lock()->get_facts("parent")[0].target.lock())->get_name();
-            props["linkToInterface"] = std::static_pointer_cast<ComponentModel>(interface->get_facts("original")[0].target.lock())->get_name();
+            const InterfacePtr interface(std::static_pointer_cast<Interface>(i.lock()));
+            nl::json props = interface->get_properties();
+            // Special case: domain and type
+            props["domain"] = interface->get_domain();
+            props["type"] = interface->get_type()->get_property("name");
+            if (interface->has_relation("original") && (interface->get_facts("original").size() > 0))
+            {
+                props["linkToNode"] = std::static_pointer_cast<ComponentModel>(interface->get_facts("original")[0].target.lock()->get_facts("parent")[0].target.lock())->get_name();
+                props["linkToInterface"] = std::static_pointer_cast<ComponentModel>(interface->get_facts("original")[0].target.lock())->get_name();
+            }
+            version["interfaces"].push_back(props);
         }
-        version["interfaces"].push_back(props);
     }
 
-    for (const auto &[i, _] : this->get_facts("dynamic_interfaces"))
+    if (this->has_facts("dynamic_interfaces"))
     {
-        const DynamicInterfacePtr interface(std::static_pointer_cast<DynamicInterface>(i.lock()));
-        nl::json props = interface->get_properties();
-        // Special case: domain and type
-        props["domain"] = interface->get_domain();
-        props["type"] = interface->get_type()->get_property("name");
-        /// original is a featured we might add later for dynamic interfaces as well
-        version["dynamic_interfaces"].push_back(props);
+        version["dynamic_interfaces"] = nl::json::array();
+        for (const auto &[i, _] : this->get_facts("dynamic_interfaces"))
+        {
+            const DynamicInterfacePtr interface(std::static_pointer_cast<DynamicInterface>(i.lock()));
+            nl::json props = interface->get_properties();
+            // Special case: domain and type
+            props["domain"] = interface->get_domain();
+            props["type"] = interface->get_type()->get_property("name");
+            /// original is a featured we might add later for dynamic interfaces as well
+            version["dynamic_interfaces"].push_back(props);
+        }
     }
 
     data["versions"].push_back(version);
