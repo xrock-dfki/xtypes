@@ -142,8 +142,7 @@ nl::json xtypes::GitReference::checkout_repository(const std::string& local_dir,
           }
           catch (const std::exception &ex)
           {
-              // TODO: make this param non-const in generator
-              const_cast<bool &>(use_https) = true;
+              throw std::runtime_error("GitReference::checkout_repository: could not clone from " + remote_url + " Reason: " + ex.what());
           }
       }
       else
