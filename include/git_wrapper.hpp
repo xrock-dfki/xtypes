@@ -502,29 +502,33 @@ namespace xtypes
             if (allowed_types & GIT_CREDENTIAL_SSH_KEY)
             {
                 std::cout << "Repository::acquire_credentials(): Authenticating with SSH\n";
-                const int res = git_cred_ssh_key_from_agent(out, username_from_url);
-                if (res < 0)
-                    throw std::runtime_error("Repository::acquire_credentials(): Failed to authenticate with SSH: " + std::string(giterr_last()->message));
-                return res;
+                std::string username = username_from_url ? std::string(username_from_url, std::find(username_from_url, username_from_url + 255, '\0')) : "git";
+                return git_cred_ssh_key_from_agent(out, username.c_str());
             }
             else if (allowed_types & GIT_CREDENTIAL_USERPASS_PLAINTEXT)
             {
                 std::cout << "Repository::acquire_credentials(): Authenticating with HTTPS\n";
                 const Repository *__this = static_cast<Repository *>(payload);
-                if (__this->m_username.empty())
-                    throw std::runtime_error("Repository::acquire_credentials(): username is missing");
-                if (__this->m_password.empty())
-                    throw std::runtime_error("Repository::acquire_credentials(): password is missing");
+                std::string username = __this->m_username;
+                if (username.empty() && (username_from_url != NULL))
+                    username = std::string(username_from_url, std::find(username_from_url, username_from_url + 255, '\0'));
+                if (username.empty())
+                    std::cout << "Repository::acquire_credentials(): Authenticating without username\n";
+                // Empty passwords are allowed for e.g. public repos
+                std::string pw = __this->m_password;
+                if (pw.empty())
+                    std::cout << "Repository::acquire_credentials(): Authenticating without password\n";
+                // If both things are empty, try public/anonymous access
+                if (username.empty() && pw.empty())
+                {
+                    std::cout << "Repository::acquire_credentials(): No credentials given. Trying anonymous/public access\n";
+                    return GIT_PASSTHROUGH;
+                }
 
-                const int res = git_cred_userpass_plaintext_new(out, __this->m_username.c_str(), __this->m_password.c_str());
-                if (res < 0)
-                    throw std::runtime_error("Repository::acquire_credentials(): Failed to authenticate with HTTPS: " + std::string(giterr_last()->message));
-                return res;
+                return git_cred_userpass_plaintext_new(out, username.c_str(), pw.c_str());
             }
-            else
-            {
-                throw std::runtime_error("Repository::acquire_credentials(): Failed to authenticate: unsupported protocol");
-            }
+            std::cout << "Unsupported type. Returning PASSTHROUGH.\n";
+            return GIT_PASSTHROUGH;
         }
 
         /**
