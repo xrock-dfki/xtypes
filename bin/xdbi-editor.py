@@ -160,7 +160,7 @@ def edit_properties(xtype):
             print(f"{k} is not a valid key!")
             continue
         allowed_values = sorted(xtype.get_allowed_property_values(k), reverse=True)
-        user_input = None   
+        user_input = None
         if len(allowed_values) > 0:
             for i, value in enumerate(allowed_values):
                 print(f"{i}. {value}")
@@ -175,6 +175,9 @@ def edit_properties(xtype):
         elif isinstance(current_props[k], dict):
             edit_dictionary(current_props[k])
         else:
+            # FIXME: This is not enough to create e.g. a editable dictionary when the entry has been None before
+            # If for example a 'key' is None and we provide a {} here, we will get into the dict case before, but regardless what we do there,
+            # it will not make it into the 'key's value.
             user_input = input(f"Please provide value for '{k}' or press ENTER: ")
         if user_input:
             try:
@@ -349,7 +352,7 @@ def main():
 
 
     # Acesss the database
-    registry = xtypes_py.ProjectRegistry()   
+    registry = xtypes_py.ProjectRegistry()
     dbi = xdbi_py.db_interface_from_config(registry, config=config, read_only=False)
 
     print(f"{parser.description}")
