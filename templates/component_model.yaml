@@ -317,3 +317,13 @@ methods:
       - name: with_name
         type: STRING
     description: "Removes part with_name"
+
+  change_part:
+    arguments:
+      - name: with_name
+        type: STRING
+      - name: to_version
+        type: STRING
+    returns:
+      type: XTYPE(ComponentPtr)
+    description: "Changes the version of the part with_name to_version. Returns the new part on success"

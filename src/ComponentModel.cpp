@@ -1621,3 +1621,51 @@ void xtypes::ComponentModel::remove_part(const std::string& with_name)
     if (part)
         remove_fact("parts", part);
 }
+
+ComponentPtr xtypes::ComponentModel::change_part(const std::string& with_name, const std::string& to_version)
+{
+    // Find part
+    ComponentPtr old_part = this->get_part(with_name);
+    if (!old_part)
+    {
+        return nullptr;
+    }
+    // Find part model
+    ComponentModelPtr old_part_model = old_part->get_type();
+    // Check if old_version != to_version
+    if (old_part_model->get_version() == to_version)
+    {
+        // If old and new version are the same, return old_part
+        return old_part;
+    }
+    // Check if we have access to a registry
+    XTypeRegistryPtr reg = old_part_model->get_registry();
+    if (!reg)
+    {
+        return nullptr;
+    }
+    // Lets find a component model in the registry with a different version
+    ComponentModel candidate;
+    candidate.set_name(old_part_model->get_name());
+    candidate.set_domain(old_part_model->get_domain());
+    candidate.set_version(to_version);
+    ComponentModelPtr new_part_model = std::static_pointer_cast<ComponentModel>(reg->load_by_uri(candidate.uri()));
+    if (!new_part_model)
+    {
+        return nullptr;
+    }
+    // First rename old part
+    old_part->set_name(old_part->get_name() + "_OLD");
+    // Create new part
+    ComponentPtr new_part = new_part_model->instantiate(std::static_pointer_cast<ComponentModel>(shared_from_this()), with_name);
+    // Pass properties to new_part (except name)
+    new_part->set_configuration(old_part->get_configuration());
+    new_part->set_alias(old_part->get_alias());
+
+    // TODO go through every connection of old part
+    // TODO and create sibling connection to/from new part?
+
+    // Remove old part
+    remove_fact("parts", old_part);
+    return new_part;
+}
