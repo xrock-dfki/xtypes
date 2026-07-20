@@ -311,3 +311,9 @@ methods:
       - name: hardware
         type: XTYPE(ComponentModel)
     description: "Removes the configured_for link between a software ComponentModel and hardware ComponentModel"
+
+  remove_part:
+    arguments:
+      - name: with_name
+        type: STRING
+    description: "Removes part with_name"

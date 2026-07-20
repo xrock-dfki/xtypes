@@ -1614,3 +1614,10 @@ void xtypes::ComponentModel::remove_configured_for(ComponentModelPtr hardware)
     hardware->remove_fact("deployables", std::static_pointer_cast<ComponentModel>(shared_from_this()));
 
 }
+
+void xtypes::ComponentModel::remove_part(const std::string& with_name)
+{
+    auto part = get_part(with_name);
+    if (part)
+        remove_fact("parts", part);
+}
