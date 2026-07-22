@@ -1662,8 +1662,37 @@ ComponentPtr xtypes::ComponentModel::change_part(const std::string& with_name, c
     new_part->set_configuration(old_part->get_configuration());
     new_part->set_alias(old_part->get_alias());
 
-    // TODO go through every connection of old part
-    // TODO and create sibling connection to/from new part?
+    // Go through every connection of old part
+    // and create sibling connection to/from new part
+    for (const auto &[oi, _] : old_part->get_facts("interfaces"))
+    {
+        InterfacePtr old_if = std::static_pointer_cast<Interface>(oi.lock());
+        const std::string& ifName(old_if->get_name());
+        InterfacePtr new_if = new_part->get_interface(ifName);
+        // Skip rewiring if we do not have a corresponding new interface
+        if (!new_if)
+        {
+            continue;
+        }
+        // Rewire
+        for (const auto &[ti, c_props] : old_if->get_facts("others"))
+        {
+            InterfacePtr target_if = std::static_pointer_cast<Interface>(ti.lock());
+            // disconnect old
+            target_if->remove_fact("from_others", old_if);
+            // connect new
+            new_if->connected_to(target_if, c_props);
+
+        }
+        for (const auto &[si, c_props] : old_if->get_facts("from_others"))
+        {
+            InterfacePtr source_if = std::static_pointer_cast<Interface>(si.lock());
+            // disconnect old
+            source_if->remove_fact("others", old_if);
+            // connect new
+            source_if->connected_to(new_if, c_props);
+        }
+    }
 
     // Remove old part
     remove_fact("parts", old_part);
