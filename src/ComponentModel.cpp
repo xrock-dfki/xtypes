@@ -1654,10 +1654,14 @@ ComponentPtr xtypes::ComponentModel::change_part(const std::string& with_name, c
     {
         return nullptr;
     }
-    // First rename old part
-    old_part->set_name(old_part->get_name() + "_OLD");
+
+    // FIXME: Investigate why we cannot safely change component version here
+
+    // NOTE: Renaming the old part does not work. instantiate() will fail below if called with with_name
+    // NOTE: Also, just calling instantiate() will not throw but component will not be updated (but deleted somehow)
+
     // Create new part
-    ComponentPtr new_part = new_part_model->instantiate(std::static_pointer_cast<ComponentModel>(shared_from_this()), with_name);
+    ComponentPtr new_part = new_part_model->instantiate(std::static_pointer_cast<ComponentModel>(shared_from_this()), with_name + "_NEW");
     // Pass properties to new_part (except name)
     new_part->set_configuration(old_part->get_configuration());
     new_part->set_alias(old_part->get_alias());
@@ -1672,6 +1676,7 @@ ComponentPtr xtypes::ComponentModel::change_part(const std::string& with_name, c
         // Skip rewiring if we do not have a corresponding new interface
         if (!new_if)
         {
+            //std::cout << "Could not resolve " << ifName << "\n";
             continue;
         }
         // Rewire
@@ -1681,7 +1686,10 @@ ComponentPtr xtypes::ComponentModel::change_part(const std::string& with_name, c
             // disconnect old
             target_if->remove_fact("from_others", old_if);
             // connect new
-            new_if->connected_to(target_if, c_props);
+            if (!new_if->connected_to(target_if, c_props))
+            {
+                //std::cout << "Could not connect new interface to target if\n";
+            }
 
         }
         for (const auto &[si, c_props] : old_if->get_facts("from_others"))
@@ -1690,11 +1698,17 @@ ComponentPtr xtypes::ComponentModel::change_part(const std::string& with_name, c
             // disconnect old
             source_if->remove_fact("others", old_if);
             // connect new
-            source_if->connected_to(new_if, c_props);
+            if (!source_if->connected_to(new_if, c_props))
+            {
+                //std::cout << "Could not connect source interface to new interface\n";
+            }
+
         }
     }
-
     // Remove old part
     remove_fact("parts", old_part);
+
+    // NOTE: We cannot rename new_part to old_part here. Otherwise both will be deleted somehow.
+
     return new_part;
 }
